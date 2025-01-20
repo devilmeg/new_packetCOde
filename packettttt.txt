@@ -1,0 +1,207 @@
+import scapy.all as scapy
+import tkinter as tk
+from tkinter import ttk
+import threading
+from datetime import datetime
+from collections import defaultdict
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+
+class PacketSnifferApp:
+    def _init_(self, root):
+        self.root = root
+        self.root.title("Packet Sniffer with Hover and Graphical Interface")
+
+        # Create Treeview (table) for packet information display
+        self.packet_treeview = ttk.Treeview(self.root, columns=("Date", "Time", "Source", "Destination", "Protocol", "Length", "Info"), show="headings")
+        self.packet_treeview.pack(padx=10, pady=10, fill="both", expand=True)
+
+        # Define the columns of the table
+        self.packet_treeview.heading("Date", text="Date")
+        self.packet_treeview.heading("Time", text="Time")
+        self.packet_treeview.heading("Source", text="Source")
+        self.packet_treeview.heading("Destination", text="Destination")
+        self.packet_treeview.heading("Protocol", text="Protocol")
+        self.packet_treeview.heading("Length", text="Length")
+        self.packet_treeview.heading("Info", text="Info")
+
+        # Add a filter section for IP filtering (optional)
+        self.filter_frame = ttk.LabelFrame(self.root, text="Filters", padding="10")
+        self.filter_frame.pack(padx=10, pady=10, fill="x")
+
+        self.ip_filter_label = ttk.Label(self.filter_frame, text="IP Filter:")
+        self.ip_filter_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        self.ip_filter_entry = ttk.Entry(self.filter_frame)
+        self.ip_filter_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        self.start_button = ttk.Button(self.filter_frame, text="Start Sniffing", command=self.start_sniffing)
+        self.start_button.grid(row=0, column=2, padx=5, pady=5)
+
+        self.stop_button = ttk.Button(self.filter_frame, text="Stop Sniffing", state=tk.DISABLED, command=self.stop_sniffing)
+        self.stop_button.grid(row=0, column=3, padx=5, pady=5)
+
+        # Initialize variables
+        self.sniff_thread = None
+        self.is_sniffing = False
+        self.packet_counter = 0
+        self.protocols = defaultdict(int)
+        self.unique_ips = set()
+
+        # Initialize hover window as None
+        self.hover_window = None
+
+        # Hover over row event listener
+        self.packet_treeview.bind("<Motion>", self.on_hover)
+
+    def start_sniffing(self):
+        """Start sniffing packets in a separate thread."""
+        self.packet_counter = 0  # Reset packet counter
+        self.protocols.clear()  # Clear protocol distribution data
+        self.unique_ips.clear()  # Clear the unique IPs set
+        self.packet_treeview.delete(*self.packet_treeview.get_children())  # Clear existing packets from the table
+        self.ip_filter = self.ip_filter_entry.get().strip()  # Get IP filter from entry
+
+        # Start sniffing packets in a new thread
+        self.sniff_thread = threading.Thread(target=self.sniff_packets)
+        self.is_sniffing = True
+        self.sniff_thread.start()
+
+        self.start_button.config(state=tk.DISABLED)
+        self.stop_button.config(state=tk.NORMAL)
+
+    def stop_sniffing(self):
+        """Stop sniffing packets."""
+        self.is_sniffing = False
+        self.sniff_thread.join()  # Wait for the sniffing thread to stop
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
+
+    def sniff_packets(self):
+        """Capture packets using scapy and filter by local IPs."""
+        scapy.sniff(prn=self.process_packet, store=0, filter="ip", count=0)
+
+    def process_packet(self, packet):
+        """Process each packet and display it in the table."""
+        if self.is_sniffing:
+            try:
+                if packet.haslayer(scapy.IP):
+                    ip_src = packet[scapy.IP].src
+                    ip_dst = packet[scapy.IP].dst
+                    protocol = packet[scapy.IP].proto
+                    length = len(packet)
+
+                    # Apply IP filter if specified
+                    if self.ip_filter and (self.ip_filter not in ip_src and self.ip_filter not in ip_dst):
+                        return  # Skip this packet if it doesn't match the filter
+
+                    # Increment the packet counter
+                    self.packet_counter += 1
+
+                    # Track protocol distribution
+                    if packet.haslayer(scapy.TCP):
+                        self.protocols["TCP"] += 1
+                        info = f"TCP {packet[scapy.TCP].sport} -> {packet[scapy.TCP].dport}"
+                    elif packet.haslayer(scapy.UDP):
+                        self.protocols["UDP"] += 1
+                        info = f"UDP {packet[scapy.UDP].sport} -> {packet[scapy.UDP].dport}"
+                    elif packet.haslayer(scapy.ICMP):
+                        self.protocols["ICMP"] += 1
+                        info = "ICMP Echo"
+                    else:
+                        self.protocols["Other"] += 1
+                        info = packet.summary()
+
+                    # Add unique IPs to the set
+                    self.unique_ips.add(ip_src)
+                    self.unique_ips.add(ip_dst)
+
+                    # Get current time
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    current_date = datetime.now().strftime("%Y-%m-%d")
+
+                    # Insert packet data into the Treeview table
+                    self.packet_treeview.insert("", "end", values=(current_date, current_time, ip_src, ip_dst, protocol, length, info))
+
+                    # Auto-scroll to the latest packet
+                    self.packet_treeview.yview(tk.END)
+
+            except Exception as e:
+                print(f"Error processing packet: {e}")
+
+    def on_hover(self, event):
+        """Show detailed statistics and update the graph when hovering over a packet row."""
+        selected_item = self.packet_treeview.identify_row(event.y)
+        if not selected_item:
+            return
+
+        # Show packet information in the hover window
+        item_values = self.packet_treeview.item(selected_item)["values"]
+        self.show_packet_info(item_values)
+        self.update_graph()
+
+    def show_packet_info(self, item_values):
+        """Display detailed packet information."""
+        total_packets = self.packet_counter
+        unique_ips = len(self.unique_ips)
+        protocol_distribution = self.protocols
+
+        # Create or update the hover window to show details
+        if self.hover_window is None:
+            self.hover_window = tk.Toplevel(self.root)
+            self.hover_window.title("Packet Details")
+        else:
+            # Clear previous content before updating
+            for widget in self.hover_window.winfo_children():
+                widget.destroy()
+
+        # Display packet info
+        info_label = tk.Label(self.hover_window, text=f"Date: {item_values[0]}\n"
+                                                      f"Time: {item_values[1]}\n"
+                                                      f"Source: {item_values[2]}\n"
+                                                      f"Destination: {item_values[3]}\n"
+                                                      f"Protocol: {item_values[4]}\n"
+                                                      f"Length: {item_values[5]}\n"
+                                                      f"Info: {item_values[6]}\n\n"
+                                                      f"Total Packets Captured: {total_packets}\n"
+                                                      f"Unique IPs: {unique_ips}\n"
+                                                      f"Protocol Distribution: {dict(protocol_distribution)}")
+        info_label.pack(padx=10, pady=10)
+
+    def update_graph(self):
+        """Update the graph in the hover window."""
+        if self.hover_window is None:
+            self.hover_window = tk.Toplevel(self.root)
+            self.hover_window.title("Protocol Distribution")
+
+        # Matplotlib Figure and Canvas for displaying graphs
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.set_title("Protocol Distribution")
+
+        # Plot the graph based on protocol (you can expand this logic to more dynamic updates)
+        protocols = list(self.protocols.keys())
+        counts = list(self.protocols.values())
+
+        bars = ax.bar(protocols, counts, color=["lightblue", "lightgreen", "orange", "lightgray"])
+
+        # Add data labels on top of the bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, height, f'{height}', ha='center', va='bottom', fontsize=10)
+
+        ax.set_xlabel("Protocols")
+        ax.set_ylabel("Packet Count")
+
+        # Embed the Matplotlib graph into the Tkinter window
+        canvas = FigureCanvasTkAgg(fig, master=self.hover_window)
+        canvas.get_tk_widget().pack(padx=10, pady=10)
+
+        canvas.draw()
+
+# Create the GUI window
+root = tk.Tk()
+sniffer = PacketSnifferApp(root)
+
+# Start the Tkinter main loop
+root.mainloop()

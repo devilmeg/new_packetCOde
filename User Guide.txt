@@ -1,0 +1,54 @@
+### **User Guide: Packet Sniffer with GUI**
+
+---
+
+### **Introduction**
+A Python-based packet sniffer with a GUI that allows real-time packet capture, IP-based filtering, and protocol distribution visualization.
+
+---
+
+### **Features**
+1. Capture network packets in real time.
+2. Filter packets by IP address.
+3. View packet details in a table.
+4. Hover for detailed statistics and protocol distribution graph.
+
+---
+
+### **Requirements**
+- **Python 3.7+**
+- Install required libraries:
+  ```bash
+  pip install scapy matplotlib
+  ```
+- **Administrative Privileges** for packet sniffing.
+
+---
+
+### **How to Use**
+1. **Run the Script**:
+   ```bash
+   python packet_sniffer_gui.py
+   ```
+2. **Start Sniffing**:
+   - Click **Start Sniffing** to begin capturing packets.
+3. **Apply Filters**:
+   - Enter an IP address in the "IP Filter" field to filter packets.
+4. **View Details**:
+   - Hover over a row to see detailed statistics and a protocol graph.
+5. **Stop Sniffing**:
+   - Click **Stop Sniffing** to end the session.
+
+---
+
+### **Troubleshooting**
+- **No Packets?** Run with admin privileges and ensure the network is active.
+- **Dependencies Missing?** Install them using `pip`.
+- **Hover Issues?** Close unnecessary hover windows.
+
+---
+
+### **Disclaimer**
+Use responsibly for educational purposes with proper authorization. Unauthorized use may violate privacy laws.
+
+Enjoy sniffing! 🚀
